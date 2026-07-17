@@ -53,8 +53,18 @@ bot.on('message', async (msg) => {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const logFile = path.join(logDir, `extraction_${photoId}_${timestamp}.json`);
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const dateStr = `${yyyy}${mm}${dd}-${hh}${min}`;
+    const sanitize = (s) => (s || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');
+    const company = sanitize(result.Company);
+    const position = sanitize(result.Position);
+    const customName = `${company}_${position}`.slice(0, 100);
+    const logFile = path.join(logDir, `${dateStr}-(${customName}).json`);
     fs.writeFileSync(logFile, JSON.stringify(result, null, 2));
     logger.info(`Saved extraction result to ${logFile}`);
 

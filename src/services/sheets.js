@@ -124,6 +124,12 @@ function getCurrentTimeFormatted() {
 async function appendRow(data) {
   return withMutex(async () => {
     try {
+      // Validate required fields
+      if (!data || data.Company === null || data.Company === undefined || data.Company === '' ||
+          data.Position === null || data.Position === undefined || data.Position === '') {
+        throw new Error('Output must contain "Company" and "Position" fields');
+      }
+
       logger.info('Connecting to Google Sheets...');
 
       const serviceAccountAuth = new JWT({

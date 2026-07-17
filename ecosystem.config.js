@@ -1,6 +1,6 @@
 module.exports = {
   apps : [{
-    name   : "telegram-extractor",
+    name   : "tele-extractor",
     script : "./src/index.js",
     instances : "max",
     exec_mode : "cluster",

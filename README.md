@@ -83,6 +83,15 @@ npm start
 pm2 start ecosystem.config.js
 ```
 
+PM2 service name: `tele-extractor`. Manage with:
+
+```bash
+pm2 status
+pm2 logs tele-extractor
+pm2 restart tele-extractor
+pm2 stop tele-extractor
+```
+
 Setelah bot berjalan:
 
 1. Buka Telegram, cari username bot Anda
