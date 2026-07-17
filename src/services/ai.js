@@ -5,17 +5,16 @@ const logger = require('../utils/logger');
 
 // Section labels untuk parsing hasil
 const FIELDS = [
-  'Company Name',
-  'Job Vacancy Title',
+  'Company',
+  'Title',
   'Position',
-  'Placement / Employment Type',
-  'Job Description',
-  'Requirements / Qualifications',
-  'Benefits / Facilities',
-  'How to Apply',
-  'Contact Information',
-  'Application Deadline',
-  'Additional Notes',
+  'Location',
+  'Industries',
+  'Type of Work',
+  'Due date',
+  'Apply Via',
+  'Requirements',
+  'Jobdesc',
 ];
 
 /**
@@ -45,6 +44,7 @@ async function extractTextFromImage(filePath) {
           3. Anda WAJIB mengembalikan output HANYA berupa raw string JSON yang valid.
           4. JANGAN sertakan teks pembuka/penutup, JANGAN sertakan penjelasan apa pun, dan JANGAN gunakan format markdown backtick seperti \`\`\`json ... \`\`\`.
           5. Jika terdapat link yang dibuat barcode, baca barcode tersebut untuk dimasukkan ke dalam struktur JSON terkait
+          6. Format kolom "Due date" HARUS dalam format dd-mm-yyyy (contoh: 15-07-2024). Jika tanggal dalam format lain, ubah ke dd-mm-yyyy.
           Struktur JSON yang WAJIB Anda ikuti, jangan ubah nama property. Ikuti sama persis format ini dengan nama property yang sudah ditentukan:
           {
             "Due date": "Tanggal batas akhir pendaftaran, isi null jika tidak tertera",
@@ -52,7 +52,7 @@ async function extractTextFromImage(filePath) {
             "Company": "Nama perusahaan yang membuka lowongan",
             "Position": "Posisi atau jabatan yang dicari",
             "Location": "Lokasi kerja atau alamat kantor perusahaan",
-            "Industries": "Bidang industri perusahaan (misal: IT, F&B, Edukasi, dll)",
+            "Industries": "Sektor industri perusahaan berdasarkan IDX-IC (Indonesia Stock Exchange Industrial Classification). Pilih SALAH SATU dari 12 sektor berikut yang paling sesuai: Energy, Basic Materials, Industrials, Consumer Non-Cyclicals, Consumer Cyclicals, Healthcare, Financials, Infrastructure, Technology, Transportation & Logistics, Properties & Real Estate, Investment Services. Jika perusahaan bukan emiten publik, tetap cari tahu sektor yang paling sesuai dengan bisnis intinya.",
             "Type of Work": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
             "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran",
             "Requirements": [
