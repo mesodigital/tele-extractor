@@ -4,6 +4,29 @@ const { JWT } = require('google-auth-library');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
+// Map AI JSON keys to possible header patterns (case-insensitive)
+const KEY_HEADER_ALIASES = {
+  due_date: ['due_date', 'deadline', 'application deadline', 'batas akhir'],
+  job_vacancy_title: ['job vacancy title', 'judul lowongan', 'vacancy title', 'job title'],
+  company_name: ['company name', 'nama perusahaan', 'perusahaan'],
+  position: ['position', 'posisi', 'jabatan'],
+  location: ['location', 'lokasi', 'alamat', 'tempat kerja'],
+  industries: ['industries', 'industri', 'bidang industri'],
+  employment_type: ['employment type', 'employment', 'placement', 'tipe kerja', 'tipe ikatan'],
+  how_to_apply: ['how to apply', 'cara melamar'],
+  requirements: ['requirements', 'kualifikasi', 'syarat', 'qualifications'],
+  job_description: ['job description', 'deskripsi pekerjaan', 'tanggung jawab', 'description'],
+};
+
+/**
+ * Check if a header matches a data key via aliases
+ */
+function headerMatchesKey(headerLower, key) {
+  const aliases = KEY_HEADER_ALIASES[key];
+  if (!aliases) return false;
+  return aliases.some((alias) => headerLower.includes(alias) || alias.includes(headerLower));
+}
+
 /**
  * Append row data ke Google Sheets
  * @param {Object} data - Data yang akan ditambahkan sebagai baris baru
@@ -33,21 +56,31 @@ async function appendRow(data) {
     await sheet.loadHeaderRow();
     const headers = sheet.headerValues;
 
-    // Map extracted data to match sheet headers (case-insensitive)
+    // Build row values matching sheet headers
     const rowValues = headers.map((header) => {
-      const headerLower = header.toLowerCase().replace(/[:\s]+/g, '');
+      const headerLower = header.toLowerCase().replace(/[\s/:]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+      // Time column - fill with current datetime
+      if (headerLower === 'time' || headerLower === 'tanggal') {
+        const now = new Date();
+        return now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      }
 
       // Find matching field in extracted data
       for (const [key, value] of Object.entries(data)) {
-        const keyLower = key.toLowerCase().replace(/[:\s]+/g, '');
+        const keyLower = key.toLowerCase().replace(/[\s/:]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
-        // Direct match or header starts/ends with key
-        if (
-          keyLower === headerLower ||
+        const exactMatch = keyLower === headerLower;
+        const aliasMatch = headerMatchesKey(headerLower, key);
+        const fuzzyMatch = !exactMatch && !aliasMatch && (
           headerLower.includes(keyLower) ||
           keyLower.includes(headerLower)
-        ) {
-          return value;
+        );
+
+        if (exactMatch || aliasMatch || fuzzyMatch) {
+          // Convert null to empty string
+          if (value === null || value === undefined) return '';
+          return String(value);
         }
       }
 

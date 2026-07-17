@@ -97,10 +97,20 @@ async function extractTextFromImage(filePath) {
     // API appends data: [DONE] directly after JSON (no newline)
     const jsonStr = rawText.replace(/data:\s*\[DONE\]\s*$/, '');
     const data = JSON.parse(jsonStr);
-    const extractedText = data.choices[0].message.content;
+    let extractedText = data.choices[0].message.content;
 
-    logger.info('AI extraction complete, parsing structured text...');
-    const result = parseStructuredText(extractedText);
+    // Clean markdown code blocks if AI wraps response in ```json
+    extractedText = extractedText.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/g, '').trim();
+
+    logger.info('AI extraction complete, parsing JSON...');
+
+    let result;
+    try {
+      result = JSON.parse(extractedText);
+    } catch (e) {
+      logger.warn(`JSON parse failed, falling back to text parsing: ${e.message}`);
+      result = parseStructuredText(extractedText);
+    }
 
     logger.info('Successfully extracted data from image');
     return result;
@@ -132,6 +142,13 @@ function parseStructuredText(text) {
 
   if (Object.keys(result).length === 0) {
     return { raw_text: text };
+  }
+
+  // Convert arrays to newline-separated strings for consistent output
+  for (const key of Object.keys(result)) {
+    if (Array.isArray(result[key])) {
+      result[key] = result[key].join('\n');
+    }
   }
 
   return result;
