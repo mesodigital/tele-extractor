@@ -13,6 +13,7 @@ const KEY_HEADER_ALIASES = {
   location: ['location', 'lokasi', 'alamat', 'tempat kerja'],
   industries: ['industries', 'industri', 'bidang industri'],
   employment_type: ['employment type', 'employment', 'placement', 'tipe kerja', 'tipe ikatan'],
+  source_link: ['source link', 'link', 'url', 'sumber', 'source'],
   how_to_apply: ['how to apply', 'cara melamar'],
   requirements: ['requirements', 'kualifikasi', 'syarat', 'qualifications'],
   job_description: ['job description', 'deskripsi pekerjaan', 'tanggung jawab', 'description'],
@@ -60,10 +61,12 @@ async function appendRow(data) {
     const rowValues = headers.map((header) => {
       const headerLower = header.toLowerCase().replace(/[\s/:]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
-      // Time column - fill with current datetime
+      // Time column - fill with current datetime (dd/mm/yyyy HH:MM:SS)
       if (headerLower === 'time' || headerLower === 'tanggal') {
         const now = new Date();
-        return now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        const str = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        // id-ID: "17/7/2026, 22.41.58" → "17/7/2026 22:41:58"
+        return str.replace(',', '').replace(/\./g, ':');
       }
 
       // Find matching field in extracted data

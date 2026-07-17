@@ -107,6 +107,12 @@ async function extractTextFromImage(filePath) {
     let result;
     try {
       result = JSON.parse(extractedText);
+
+      // Fallback: position → job_vacancy_title jika position kosong
+      if (!result.position || result.position === '' || result.position === null) {
+        result.position = result.job_vacancy_title;
+        logger.info('Position empty, fell back to job_vacancy_title');
+      }
     } catch (e) {
       logger.warn(`JSON parse failed, falling back to text parsing: ${e.message}`);
       result = parseStructuredText(extractedText);

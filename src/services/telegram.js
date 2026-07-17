@@ -39,6 +39,15 @@ bot.on('message', async (msg) => {
     logger.info('Sending image to AI for extraction...');
     const result = await aiService.extractTextFromImage(downloadedPath);
 
+    // Extract URL from caption if present
+    if (msg.caption) {
+      const urlMatch = msg.caption.match(/(https?:\/\/[^\s]+)/gi);
+      if (urlMatch && urlMatch.length > 0) {
+        result.source_link = urlMatch[0];
+        logger.info(`Found source link in caption: ${result.source_link}`);
+      }
+    }
+
     // Simpan hasil sebagai file JSON di logs/
     const logDir = path.join(__dirname, '../../logs');
     if (!fs.existsSync(logDir)) {
