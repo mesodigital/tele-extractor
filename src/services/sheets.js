@@ -38,71 +38,83 @@ function headerMatchesKey(headerLower, key) {
 }
 
 /**
- * Format date string to dd-mm-yyyy
+ * Format date string to yyyy-mm-dd (ISO date) so Google Sheets auto-detects as date
  */
-function formatDateToDDMMYYYY(value) {
+function formatDateToSheets(value) {
   if (!value || value === null) return '';
   const str = String(value).trim();
   if (!str) return '';
 
-  // Already dd-mm-yyyy
-  if (/^\d{2}-\d{2}-\d{4}$/.test(str)) return str;
-
-  // Try parsing common formats
   let date = null;
 
-  // dd/mm/yyyy or d/m/yyyy
-  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    date = new Date(parseInt(slashMatch[3]), parseInt(slashMatch[2]) - 1, parseInt(slashMatch[1]));
+  // Already yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    date = new Date(str + 'T00:00:00');
+    if (!isNaN(date.getTime())) return str;
   }
 
-  // yyyy-mm-dd
-  const dashMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  // dd-mm-yyyy or d-m-yyyy
+  const dashMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (dashMatch) {
-    date = new Date(parseInt(dashMatch[1]), parseInt(dashMatch[2]) - 1, parseInt(dashMatch[3]));
+    date = new Date(parseInt(dashMatch[3]), parseInt(dashMatch[2]) - 1, parseInt(dashMatch[1]));
+  }
+
+  // dd/mm/yyyy or d/m/yyyy
+  if (!date) {
+    const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) {
+      date = new Date(parseInt(slashMatch[3]), parseInt(slashMatch[2]) - 1, parseInt(slashMatch[1]));
+    }
+  }
+
+  // yyyy-mm-dd (already checked above, but catch other variations)
+  if (!date) {
+    const revMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (revMatch) {
+      date = new Date(parseInt(revMatch[1]), parseInt(revMatch[2]) - 1, parseInt(revMatch[3]));
+    }
   }
 
   // dd Month yyyy (e.g., 15 Juli 2024, 15 July 2024)
-  const textMatch = str.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
-  if (textMatch) {
-    date = new Date(textMatch[3] + ' ' + textMatch[2] + ' ' + textMatch[1]);
+  if (!date) {
+    const textMatch = str.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
+    if (textMatch) {
+      date = new Date(textMatch[3] + ' ' + textMatch[2] + ' ' + textMatch[1]);
+    }
   }
 
   if (date && !isNaN(date.getTime())) {
-    const d = String(date.getDate()).padStart(2, '0');
-    const m = String(date.getMonth() + 1).padStart(2, '0');
     const y = date.getFullYear();
-    return `${d}-${m}-${y}`;
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   // Fallback: try native Date parse
   const nativeDate = new Date(str);
   if (!isNaN(nativeDate.getTime())) {
-    const d = String(nativeDate.getDate()).padStart(2, '0');
-    const m = String(nativeDate.getMonth() + 1).padStart(2, '0');
     const y = nativeDate.getFullYear();
-    return `${d}-${m}-${y}`;
+    const m = String(nativeDate.getMonth() + 1).padStart(2, '0');
+    const d = String(nativeDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   return str;
 }
 
 /**
- * Format current time to dd-mm-yyyy hh:mm WIB
+ * Format current time to yyyy-mm-dd hh:mm so Google Sheets auto-detects as date
  */
 function getCurrentTimeFormatted() {
   const now = new Date();
-  // Convert to Asia/Jakarta (UTC+7)
-  const jakartaOffset = 7 * 60;
-  const localOffset = now.getTimezoneOffset();
-  const jakarta = new Date(now.getTime() + (localOffset + jakartaOffset) * 60000);
-  const d = String(jakarta.getUTCDate()).padStart(2, '0');
-  const m = String(jakarta.getUTCMonth() + 1).padStart(2, '0');
+  // Jakarta is UTC+7, no DST. Add 7h to Unix timestamp directly.
+  const jakarta = new Date(now.getTime() + 7 * 60 * 60 * 1000);
   const y = jakarta.getUTCFullYear();
+  const m = String(jakarta.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(jakarta.getUTCDate()).padStart(2, '0');
   const hh = String(jakarta.getUTCHours()).padStart(2, '0');
   const mm = String(jakarta.getUTCMinutes()).padStart(2, '0');
-  return `${d}-${m}-${y} ${hh}:${mm}`;
+  return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
 /**
@@ -124,8 +136,12 @@ async function appendRow(data) {
 
       await doc.loadInfo();
 
-      // Use first sheet
-      const sheet = doc.sheetsByIndex[0];
+      // Find sheet by name (from GOOGLE_SHEET_NAME), fallback to first sheet
+      let sheet = doc.sheetsByTitle[config.googleSheetName];
+      if (!sheet) {
+        logger.warn(`Sheet "${config.googleSheetName}" not found, using first sheet`);
+        sheet = doc.sheetsByIndex[0];
+      }
       if (!sheet) {
         logger.warn('No sheets found in spreadsheet');
         return;
@@ -169,7 +185,7 @@ async function appendRow(data) {
           return String(nextNo);
         }
 
-        // Time column - fill with current datetime (dd-mm-yyyy hh:mm)
+        // Time column - fill with current datetime (yyyy-mm-dd hh:mm)
         if (headerLower === 'time' || headerLower === 'tanggal' || headerLower === 'waktu') {
           return getCurrentTimeFormatted();
         }
@@ -191,11 +207,15 @@ async function appendRow(data) {
           );
 
           if (exactMatch || aliasMatch || fuzzyMatch) {
-            if (value === null || value === undefined) return '';
+            if (value === null || value === undefined) {
+              // Default 'On-site' for Type of Work when not in poster
+              if (key === 'Type of Work') return 'On-site';
+              return '';
+            }
 
-            // Format Due date to dd-mm-yyyy
+            // Format Due date to yyyy-mm-dd for Sheets auto-detection
             if (key === 'Due date') {
-              return formatDateToDDMMYYYY(value);
+              return formatDateToSheets(value);
             }
 
             return String(value);

@@ -47,6 +47,7 @@ Edit `.env` dan isi semua variabel yang diperlukan (lihat [Konfigurasi](#konfigu
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | ✅ | Email service account dari Google Cloud |
 | `GOOGLE_PRIVATE_KEY` | ✅ | Private key service account |
 | `GOOGLE_SHEET_ID` | ✅ | ID Google Sheet (string panjang di URL spreadsheet) |
+| `GOOGLE_SHEET_NAME` | ❌ | Nama sheet/tab dalam spreadsheet (default: `Sheet1`). Contoh: `Loker` |
 | `PORT` | ❌ | Port HTTP server (default: `4746`) |
 | `NODE_ENV` | ❌ | `development` atau `production` (default: `development`) |
 
@@ -60,6 +61,7 @@ Edit `.env` dan isi semua variabel yang diperlukan (lihat [Konfigurasi](#konfigu
 4. Copy `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `private_key` → `GOOGLE_PRIVATE_KEY`
 5. Buat Google Sheet baru, share ke email service account sebagai **Editor**
 6. Copy ID spreadsheet dari URL: `https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/edit`
+7. Set `GOOGLE_SHEET_NAME` di `.env` sesuai nama sheet/tab yang digunakan (default: `Sheet1`). Misal sheet bernama "Loker", set `GOOGLE_SHEET_NAME=Loker`
 
 > **Header Sheet:** Baris pertama sheet akan dibaca sebagai header kolom. Bot akan mencocokkan key hasil ekstraksi dengan header secara otomatis. Tambahkan kolom `Time` atau `Tanggal` untuk diisi otomatis dengan timestamp.
 

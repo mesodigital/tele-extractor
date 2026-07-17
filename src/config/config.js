@@ -12,6 +12,7 @@ const config = {
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   googleSheetId: process.env.GOOGLE_SHEET_ID,
+  googleSheetName: process.env.GOOGLE_SHEET_NAME || 'Sheet1',
 };
 
 // Basic validation
