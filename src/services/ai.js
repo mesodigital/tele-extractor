@@ -45,21 +45,21 @@ async function extractTextFromImage(filePath) {
           3. Anda WAJIB mengembalikan output HANYA berupa raw string JSON yang valid.
           4. JANGAN sertakan teks pembuka/penutup, JANGAN sertakan penjelasan apa pun, dan JANGAN gunakan format markdown backtick seperti \`\`\`json ... \`\`\`.
           5. Jika terdapat link yang dibuat barcode, baca barcode tersebut untuk dimasukkan ke dalam struktur JSON terkait
-          Struktur JSON yang WAJIB Anda ikuti:
+          Struktur JSON yang WAJIB Anda ikuti, jangan ubah nama property. Ikuti sama persis format ini dengan nama property yang sudah ditentukan:
           {
-            "due_date": "Tanggal batas akhir pendaftaran, isi null jika tidak tertera",
-            "job_vacancy_title": "Judul atau nama lowongan pekerjaan utama",
-            "company_name": "Nama perusahaan yang membuka lowongan",
-            "position": "Posisi atau jabatan yang dicari",
-            "location": "Lokasi kerja atau alamat kantor perusahaan",
-            "industries": "Bidang industri perusahaan (misal: IT, F&B, Edukasi, dll)",
-            "employment_type": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
-            "how_to_apply": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran",
-            "requirements": [
+            "Due date": "Tanggal batas akhir pendaftaran, isi null jika tidak tertera",
+            "Title": "Judul atau nama lowongan pekerjaan utama",
+            "Company": "Nama perusahaan yang membuka lowongan",
+            "Position": "Posisi atau jabatan yang dicari",
+            "Location": "Lokasi kerja atau alamat kantor perusahaan",
+            "Industries": "Bidang industri perusahaan (misal: IT, F&B, Edukasi, dll)",
+            "Type of Work": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
+            "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran",
+            "Requirements": [
               "Kualifikasi atau syarat pelamar 1",
               "Kualifikasi atau syarat pelamar 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
             ],
-            "job_description": [
+            "Jobdesc": [
               "Deskripsi pekerjaan atau tanggung jawab 1",
               "Deskripsi pekerjaan atau tanggung jawab 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
             ]
@@ -94,10 +94,32 @@ async function extractTextFromImage(filePath) {
     }
 
     const rawText = await response.text();
-    // API appends data: [DONE] directly after JSON (no newline)
-    const jsonStr = rawText.replace(/data:\s*\[DONE\]\s*$/, '');
-    const data = JSON.parse(jsonStr);
-    let extractedText = data.choices[0].message.content;
+    // API returns SSE streaming: data: {chunk}\n\ndata: {chunk}\n\ndata: [DONE]
+    // Parse each data: line, collect delta.content
+    let extractedText = '';
+    for (const line of rawText.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === 'data: [DONE]') continue;
+      if (trimmed.startsWith('data: ')) {
+        try {
+          const chunk = JSON.parse(trimmed.slice(6));
+          if (chunk.choices && chunk.choices[0]) {
+            const delta = chunk.choices[0].delta;
+            if (delta && delta.content) {
+              extractedText += delta.content;
+            }
+            // Non-streaming fallback
+            const msg = chunk.choices[0].message;
+            if (msg && msg.content) {
+              extractedText = msg.content;
+              break;
+            }
+          }
+        } catch (e) {
+          logger.warn(`Failed to parse SSE chunk: ${e.message}`);
+        }
+      }
+    }
 
     // Clean markdown code blocks if AI wraps response in ```json
     extractedText = extractedText.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/g, '').trim();
@@ -108,10 +130,10 @@ async function extractTextFromImage(filePath) {
     try {
       result = JSON.parse(extractedText);
 
-      // Fallback: position → job_vacancy_title jika position kosong
-      if (!result.position || result.position === '' || result.position === null) {
-        result.position = result.job_vacancy_title;
-        logger.info('Position empty, fell back to job_vacancy_title');
+      // Fallback: Position → Title jika Position kosong
+      if (!result['Position'] || result['Position'] === '' || result['Position'] === null) {
+        result['Position'] = result['Title'];
+        logger.info('Position empty, fell back to Title');
       }
     } catch (e) {
       logger.warn(`JSON parse failed, falling back to text parsing: ${e.message}`);
