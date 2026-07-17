@@ -8,19 +8,21 @@ const PORT = config.port || 4746;
 async function start() {
   try {
     logger.info(`🚀 Tele-Extractor started in ${config.nodeEnv} mode`);
-    logger.info(`📡 Listening on port ${PORT}`);
+    logger.info(`📡 Telegram bot polling...`);
+    logger.info(`🔒 Chat ID whitelist: ${config.allowedChatId}`);
 
-    // Siapkan server HTTP untuk webhook (opsional)
+    // Health check endpoint
     const http = require('http');
     http.createServer((req, res) => {
-      if (req.url === '/webhook') {
-        bot.onWebhook(req, res);
-      } else {
-        res.writeHead(200);
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
       }
     }).listen(PORT, () => {
-      logger.info(`✅ Server berjalan di port ${PORT}`);
+      logger.info(`✅ HTTP server listening on port ${PORT}`);
     });
 
   } catch (error) {

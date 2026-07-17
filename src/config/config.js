@@ -10,7 +10,7 @@ const config = {
   aiApiKey: process.env.AI_API_KEY,
   aiModel: process.env.AI_MODEL,
   googleServiceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY.replace(/\n/g, '\n'),
+  googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   googleSheetId: process.env.GOOGLE_SHEET_ID,
 };
 

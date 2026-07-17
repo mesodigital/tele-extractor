@@ -1,19 +1,8 @@
 // Logika otentikasi Google Service Account dan appendRow
-const { google } = require('googleapis');
+const { GoogleSpreadsheet } = require('google-spreadsheet');
+const { JWT } = require('google-auth-library');
 const config = require('../config/config');
 const logger = require('../utils/logger');
-
-/**
- * Otentikasi Google Service Account dan dapatkan instance spreadsheet
- */
-function getAuthClient() {
-  const key = new Buffer(config.googlePrivateKey, 'base64').toString('utf8');
-  return google.auth({
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    keyFile: key,
-    projectId: process.env.GOOGLE_PROJECT_ID || 'tele-extractor',
-  });
-}
 
 /**
  * Append row data ke Google Sheets
@@ -23,42 +12,52 @@ async function appendRow(data) {
   try {
     logger.info('Connecting to Google Sheets...');
 
-    const authClient = getAuthClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
-
-    // Dapatkan kolom dari sheet pertama jika kosong
-    const response = await sheets.spreadsheets.values.get({
-      auth: authClient,
-      spreadsheetId: config.googleSheetId,
-      range: 'A1:Z1000', // Agak asumtif untuk header
+    const serviceAccountAuth = new JWT({
+      email: config.googleServiceAccountEmail,
+      key: config.googlePrivateKey,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 
-    const values = response.data.values;
+    const doc = new GoogleSpreadsheet(config.googleSheetId, serviceAccountAuth);
 
-    if (!values || values.length === 0) {
-      logger.warn('Sheet is empty or no data found');
+    await doc.loadInfo();
+
+    // Use first sheet
+    const sheet = doc.sheetsByIndex[0];
+    if (!sheet) {
+      logger.warn('No sheets found in spreadsheet');
       return;
     }
 
-    // Tentukan jumlah kolom berdasarkan header
-    const numColumns = values[0].length;
+    // Load header row to determine column mapping
+    await sheet.loadHeaderRow();
+    const headers = sheet.headerValues;
 
-    // Siapkan data baru
-    const newRow = [];
-    for (let i = 0; i < numColumns; i++) {
-      newRow.push(data[String.fromCharCode(65 + i)] || null);
-    }
+    // Map extracted data to match sheet headers (case-insensitive)
+    const rowValues = headers.map((header) => {
+      const headerLower = header.toLowerCase().replace(/[:\s]+/g, '');
 
-    // Tambahkan baris baru
-    logger.info('Appending new row to Google Sheets...');
-    await sheets.spreadsheets.values.append({
-      auth: authClient,
-      spreadsheetId: config.googleSheetId,
-      range: 'A2', // Mulai dari baris kedua setelah header
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [newRow] },
+      // Find matching field in extracted data
+      for (const [key, value] of Object.entries(data)) {
+        const keyLower = key.toLowerCase().replace(/[:\s]+/g, '');
+
+        // Direct match or header starts/ends with key
+        if (
+          keyLower === headerLower ||
+          headerLower.includes(keyLower) ||
+          keyLower.includes(headerLower)
+        ) {
+          return value;
+        }
+      }
+
+      // No match found, leave empty
+      return '';
     });
+
+    // Append row
+    logger.info('Appending new row to Google Sheets...');
+    await sheet.addRow(rowValues);
 
     logger.info('Successfully appended row to Google Sheets');
 
