@@ -35,7 +35,7 @@ const SYSTEM_PROMPT = `Analisis gambar poster lowongan pekerjaan ini (bisa dalam
             "Location": "Lokasi kerja atau alamat kantor perusahaan",
             "Industries": "Sektor industri perusahaan berdasarkan IDX-IC (Indonesia Stock Exchange Industrial Classification). Pilih SALAH SATU dari 12 sektor berikut yang paling sesuai: Energy, Basic Materials, Industrials, Consumer Non-Cyclicals, Consumer Cyclicals, Healthcare, Financials, Infrastructure, Technology, Transportation & Logistics, Properties & Real Estate, Investment Services. Jika perusahaan bukan emiten publik, tetap cari tahu sektor yang paling sesuai dengan bisnis intinya.",
             "Type of Work": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
-            "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran, jika ada QR-Code scan dan berikan link tersebut",
+            "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran, jika ada QR-Code, WAJIB baca/scan dan berikan link dari QR-Code tersebut",
             "Requirements": [
               "Kualifikasi atau syarat pelamar 1",
               "Kualifikasi atau syarat pelamar 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
