@@ -173,8 +173,8 @@ async function extractTextFromImage(filePathOrPaths) {
 
       // Fallback: Position → Title jika Position kosong
       if (!result['Position'] || result['Position'] === '' || result['Position'] === null) {
-        result['Position'] = result['Title'];
-        logger.info('Position empty, fell back to Title');
+        result['Position'] = result['Title'] || '-';
+        if (result['Position'] === '-') logger.info('Position empty, Title also empty, used default');
       }
     } catch (e) {
       logger.warn(`JSON parse failed, falling back to text parsing: ${e.message}`);
