@@ -23,7 +23,7 @@ Telegram bot yang menerima gambar poster lowongan pekerjaan, mengekstrak informa
 
 ```bash
 # Clone repo
-git clone <repo-url>
+git clone https://github.com/mesodigital/tele-extractor.git
 cd tele-extractor
 
 # Install dependencies
