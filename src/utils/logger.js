@@ -1,32 +1,39 @@
-// Konfigurasi Winston untuk debugging dan error logging
-const winston = require('winston');
+// Lightweight logger (no winston) — lower RSS on 1GB boards
+const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
 
-const logger = winston.createLogger({
-  level: config.nodeEnv === 'development' ? 'debug' : 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      )
-    })
-  ]
-});
+const isDev = config.nodeEnv === 'development';
+const levels = { error: 0, warn: 1, info: 2, debug: 3 };
+const current = isDev ? levels.debug : levels.info;
 
-if (config.nodeEnv === 'production') {
-  logger.add(new winston.transports.File({
-    filename: path.join('logs', 'error.log'),
-    level: 'error',
-    maxsize: 10 * 1024 * 1024, // 10MB
-    maxFiles: 5, // Keep up to 5 files
-    tailable: true
-  }));
+let errorStream = null;
+if (!isDev) {
+  const logDir = path.join(process.cwd(), 'logs');
+  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+  errorStream = fs.createWriteStream(path.join(logDir, 'error.log'), { flags: 'a' });
 }
 
-module.exports = logger;
+function ts() {
+  return new Date().toISOString();
+}
+
+function write(level, msg) {
+  if (levels[level] > current) return;
+  const line = `${ts()} [${level}] ${msg}`;
+  if (level === 'error') {
+    console.error(line);
+    if (errorStream) errorStream.write(line + '\n');
+  } else if (level === 'warn') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+module.exports = {
+  error: (m) => write('error', m),
+  warn: (m) => write('warn', m),
+  info: (m) => write('info', m),
+  debug: (m) => write('debug', m),
+};

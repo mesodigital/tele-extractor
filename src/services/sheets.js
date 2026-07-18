@@ -1,6 +1,5 @@
 // Logika otentikasi Google Service Account dan appendRow
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
+// Lazy-load Google libs saat append — hemat RSS idle
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
@@ -131,6 +130,9 @@ async function appendRow(data) {
       }
 
       logger.info('Connecting to Google Sheets...');
+
+      const { GoogleSpreadsheet } = require('google-spreadsheet');
+      const { JWT } = require('google-auth-library');
 
       const serviceAccountAuth = new JWT({
         email: config.googleServiceAccountEmail,
