@@ -22,18 +22,68 @@ const FIELDS = [
  * @param {string} filePath - Path ke file gambar
  * @returns {Promise<Object>} Data yang diekstraksi
  */
+function mimeFromPath(filePath) {
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
+function extractContentFromApiResponse(rawText) {
+  const trimmed = rawText.trim();
+  if (!trimmed) return '';
+
+  // Non-stream JSON (OpenAI default, OpenRouter, banyak proxy)
+  if (trimmed.startsWith('{')) {
+    try {
+      const data = JSON.parse(trimmed);
+      const content = data?.choices?.[0]?.message?.content;
+      if (typeof content === 'string' && content) return content;
+      // Beberapa proxy pakai text / output
+      if (typeof data?.choices?.[0]?.text === 'string') return data.choices[0].text;
+      if (typeof data?.content === 'string') return data.content;
+    } catch (e) {
+      logger.warn(`Non-stream JSON parse failed: ${e.message}`);
+    }
+  }
+
+  // SSE stream: data: {chunk}\n\ndata: [DONE]
+  let extractedText = '';
+  for (const line of rawText.split('\n')) {
+    const lineTrim = line.trim();
+    if (!lineTrim || lineTrim === 'data: [DONE]') continue;
+    if (!lineTrim.startsWith('data: ')) continue;
+    try {
+      const chunk = JSON.parse(lineTrim.slice(6));
+      const choice = chunk?.choices?.[0];
+      if (!choice) continue;
+      if (choice.delta?.content) extractedText += choice.delta.content;
+      if (choice.message?.content) {
+        extractedText = choice.message.content;
+        break;
+      }
+    } catch (e) {
+      logger.warn(`Failed to parse SSE chunk: ${e.message}`);
+    }
+  }
+  return extractedText;
+}
+
 async function extractTextFromImage(filePath) {
   try {
     logger.info(`Extracting text from ${filePath}`);
 
     const imageBuffer = fs.readFileSync(filePath);
     const base64Image = imageBuffer.toString('base64');
-    logger.info(`Image size: ${(imageBuffer.length / 1024).toFixed(1)}KB`);
+    const mime = mimeFromPath(filePath);
+    logger.info(`Image size: ${(imageBuffer.length / 1024).toFixed(1)}KB, mime: ${mime}`);
 
-    const url = `${config.aiBaseUrl}/chat/completions`;
+    const url = `${config.aiBaseUrl.replace(/\/$/, '')}/chat/completions`;
 
     const body = JSON.stringify({
       model: config.aiModel,
+      stream: false,
       messages: [
         {
           role: 'system',
@@ -68,7 +118,10 @@ async function extractTextFromImage(filePath) {
         {
           role: 'user',
           content: [
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mime};base64,${base64Image}` },
+            },
           ],
         },
       ],
@@ -94,31 +147,11 @@ async function extractTextFromImage(filePath) {
     }
 
     const rawText = await response.text();
-    // API returns SSE streaming: data: {chunk}\n\ndata: {chunk}\n\ndata: [DONE]
-    // Parse each data: line, collect delta.content
-    let extractedText = '';
-    for (const line of rawText.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed === 'data: [DONE]') continue;
-      if (trimmed.startsWith('data: ')) {
-        try {
-          const chunk = JSON.parse(trimmed.slice(6));
-          if (chunk.choices && chunk.choices[0]) {
-            const delta = chunk.choices[0].delta;
-            if (delta && delta.content) {
-              extractedText += delta.content;
-            }
-            // Non-streaming fallback
-            const msg = chunk.choices[0].message;
-            if (msg && msg.content) {
-              extractedText = msg.content;
-              break;
-            }
-          }
-        } catch (e) {
-          logger.warn(`Failed to parse SSE chunk: ${e.message}`);
-        }
-      }
+    let extractedText = extractContentFromApiResponse(rawText);
+
+    if (!extractedText) {
+      logger.error(`Empty AI content. Raw head: ${rawText.slice(0, 500)}`);
+      throw new Error('AI returned empty content (response format mismatch or model no vision)');
     }
 
     // Clean markdown code blocks if AI wraps response in ```json

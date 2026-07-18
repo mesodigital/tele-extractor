@@ -83,8 +83,18 @@ bot.on('message', async (msg) => {
   } catch (error) {
     logger.error(`Error processing message: ${error.message}`);
 
-    // Kirim error ke pengguna
-    await bot.sendMessage(msg.chat.id, '❌ Terjadi kesalahan saat memproses gambar. Silakan coba lagi.');
+    // Balas dengan log error format quote (blockquote Telegram)
+    const raw = error.stack || String(error);
+    const detail = raw.length > 3500 ? `${raw.slice(0, 3500)}\n…` : raw;
+    const escapeHtml = (s) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Terjadi kesalahan saat memproses gambar.\n\n<blockquote expandable>${escapeHtml(detail)}</blockquote>`,
+      { parse_mode: 'HTML', reply_to_message_id: msg.message_id }
+    );
 
   } finally {
     // Hapus file sementara (selalu, sukses atau gagal)
