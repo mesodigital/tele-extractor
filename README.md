@@ -10,7 +10,7 @@ Telegram bot yang menerima gambar poster lowongan pekerjaan, mengekstrak informa
 - Simpan log hasil ekstraksi ke file JSON lokal
 - Whitelist chat ID untuk keamanan (hanya chat tertentu yang bisa menggunakan bot)
 - Health check endpoint (`GET /health`)
-- Siap production dengan PM2 cluster mode
+- Siap production dengan PM2 (cluster mode di Linux/macOS, fork mode di Windows)
 
 ## Persyaratan
 
@@ -75,13 +75,15 @@ Edit `.env` dan isi semua variabel yang diperlukan (lihat [Konfigurasi](#konfigu
 npm run dev
 ```
 
-**Production (PM2):**
+**Production (PM2):
 
 ```bash
 npm start
 # atau langsung
 pm2 start ecosystem.config.js
 ```
+
+> **Catatan:** `ecosystem.config.js` otomatis menggunakan cluster mode (multi-proses) di Linux/macOS dan fork mode (single process) di Windows karena cluster mode tidak didukung di Windows.
 
 PM2 service name: `tele-extractor`. Manage with:
 
@@ -125,7 +127,7 @@ tele-extractor/
 ## Catatan
 
 - Bot hanya memproses pesan **gambar** dari chat yang ada di `ALLOWED_CHAT_ID`
-- File gambar di-download ke `/tmp`, lalu dihapus otomatis setelah diproses
+- File gambar di-download ke temporary directory sistem (`os.tmpdir()`, cross-platform: `/tmp` di Linux/macOS, `%TEMP%` di Windows), lalu dihapus otomatis setelah diproses
 - Hasil ekstraksi disimpan sebagai file JSON di `logs/` untuk audit trail
 - AI prompt dirancang untuk poster lowongan kerja (mendukung Bahasa Indonesia & Inggris)
 - Bot menggunakan `fetch` native (Node 18+), tidak perlu dependency `axios` atau `node-fetch`
