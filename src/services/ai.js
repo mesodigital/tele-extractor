@@ -17,9 +17,38 @@ const FIELDS = [
   'Jobdesc',
 ];
 
+const SYSTEM_PROMPT = `Analisis gambar poster lowongan pekerjaan ini (bisa dalam Bahasa Indonesia atau Bahasa Inggris). Ekstrak informasi yang tersedia dan kembalikan HANYA dalam format JSON yang valid.
+          Gambar bisa multi-halaman poster yang sama; gabungkan info dari semua halaman, jangan tebak field yang tidak ada di salah satu halaman.
+          Ketentuan Pengisian Field:
+          1. Jika suatu field TIDAK ditemukan atau kosong di dalam poster, isi nilainya dengan null (jangan dikosongkan, jangan dihapus field-nya, dan jangan menebak-nebak).
+          2. Tulis nilai apa adanya sesuai yang tertera di poster.
+          3. Anda WAJIB mengembalikan output HANYA berupa raw string JSON yang valid.
+          4. JANGAN sertakan teks pembuka/penutup, JANGAN sertakan penjelasan apa pun, dan JANGAN gunakan format markdown backtick seperti \`\`\`json ... \`\`\`.
+          5. Jika terdapat link yang dibuat barcode, baca barcode tersebut untuk dimasukkan ke dalam struktur JSON terkait
+          6. Format kolom "Due date" HARUS dalam format dd-mm-yyyy (contoh: 15-07-2024). Jika tanggal dalam format lain, ubah ke dd-mm-yyyy.
+          Struktur JSON yang WAJIB Anda ikuti, jangan ubah nama property. Ikuti sama persis format ini dengan nama property yang sudah ditentukan:
+          {
+            "Due date": "Tanggal batas akhir pendaftaran, isi null jika tidak tertera",
+            "Title": "Judul atau nama lowongan pekerjaan utama",
+            "Company": "Nama perusahaan yang membuka lowongan",
+            "Position": "Posisi atau jabatan yang dicari",
+            "Location": "Lokasi kerja atau alamat kantor perusahaan",
+            "Industries": "Sektor industri perusahaan berdasarkan IDX-IC (Indonesia Stock Exchange Industrial Classification). Pilih SALAH SATU dari 12 sektor berikut yang paling sesuai: Energy, Basic Materials, Industrials, Consumer Non-Cyclicals, Consumer Cyclicals, Healthcare, Financials, Infrastructure, Technology, Transportation & Logistics, Properties & Real Estate, Investment Services. Jika perusahaan bukan emiten publik, tetap cari tahu sektor yang paling sesuai dengan bisnis intinya.",
+            "Type of Work": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
+            "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran",
+            "Requirements": [
+              "Kualifikasi atau syarat pelamar 1",
+              "Kualifikasi atau syarat pelamar 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
+            ],
+            "Jobdesc": [
+              "Deskripsi pekerjaan atau tanggung jawab 1",
+              "Deskripsi pekerjaan atau tanggung jawab 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
+            ]
+          }`;
+
 /**
- * Ekstraksi teks dari gambar menggunakan model AI via fetch langsung
- * @param {string} filePath - Path ke file gambar
+ * Ekstraksi teks dari gambar (tunggal atau multi) menggunakan model AI via fetch langsung
+ * @param {string|string[]} filePathOrPaths - Path file gambar, atau array path
  * @returns {Promise<Object>} Data yang diekstraksi
  */
 function mimeFromPath(filePath) {
@@ -70,15 +99,25 @@ function extractContentFromApiResponse(rawText) {
   return extractedText;
 }
 
-async function extractTextFromImage(filePath) {
+function toImageContent(filePath) {
+  const imageBuffer = fs.readFileSync(filePath);
+  const base64Image = imageBuffer.toString('base64');
+  const mime = mimeFromPath(filePath);
+  logger.info(`Image ${filePath}: ${(imageBuffer.length / 1024).toFixed(1)}KB, mime: ${mime}`);
+  return {
+    type: 'image_url',
+    image_url: { url: `data:${mime};base64,${base64Image}` },
+  };
+}
+
+async function extractTextFromImage(filePathOrPaths) {
   try {
-    logger.info(`Extracting text from ${filePath}`);
+    const paths = Array.isArray(filePathOrPaths) ? filePathOrPaths : [filePathOrPaths];
+    if (paths.length === 0) throw new Error('No image paths provided');
 
-    const imageBuffer = fs.readFileSync(filePath);
-    const base64Image = imageBuffer.toString('base64');
-    const mime = mimeFromPath(filePath);
-    logger.info(`Image size: ${(imageBuffer.length / 1024).toFixed(1)}KB, mime: ${mime}`);
+    logger.info(`Extracting text from ${paths.length} image(s)`);
 
+    const imageContents = paths.map(toImageContent);
     const url = `${config.aiBaseUrl.replace(/\/$/, '')}/chat/completions`;
 
     const body = JSON.stringify({
@@ -87,42 +126,11 @@ async function extractTextFromImage(filePath) {
       messages: [
         {
           role: 'system',
-          content: `Analisis gambar poster lowongan pekerjaan ini (bisa dalam Bahasa Indonesia atau Bahasa Inggris). Ekstrak informasi yang tersedia dan kembalikan HANYA dalam format JSON yang valid.
-          Ketentuan Pengisian Field:
-          1. Jika suatu field TIDAK ditemukan atau kosong di dalam poster, isi nilainya dengan null (jangan dikosongkan, jangan dihapus field-nya, dan jangan menebak-nebak).
-          2. Tulis nilai apa adanya sesuai yang tertera di poster.
-          3. Anda WAJIB mengembalikan output HANYA berupa raw string JSON yang valid.
-          4. JANGAN sertakan teks pembuka/penutup, JANGAN sertakan penjelasan apa pun, dan JANGAN gunakan format markdown backtick seperti \`\`\`json ... \`\`\`.
-          5. Jika terdapat link yang dibuat barcode, baca barcode tersebut untuk dimasukkan ke dalam struktur JSON terkait
-          6. Format kolom "Due date" HARUS dalam format dd-mm-yyyy (contoh: 15-07-2024). Jika tanggal dalam format lain, ubah ke dd-mm-yyyy.
-          Struktur JSON yang WAJIB Anda ikuti, jangan ubah nama property. Ikuti sama persis format ini dengan nama property yang sudah ditentukan:
-          {
-            "Due date": "Tanggal batas akhir pendaftaran, isi null jika tidak tertera",
-            "Title": "Judul atau nama lowongan pekerjaan utama",
-            "Company": "Nama perusahaan yang membuka lowongan",
-            "Position": "Posisi atau jabatan yang dicari",
-            "Location": "Lokasi kerja atau alamat kantor perusahaan",
-            "Industries": "Sektor industri perusahaan berdasarkan IDX-IC (Indonesia Stock Exchange Industrial Classification). Pilih SALAH SATU dari 12 sektor berikut yang paling sesuai: Energy, Basic Materials, Industrials, Consumer Non-Cyclicals, Consumer Cyclicals, Healthcare, Financials, Infrastructure, Technology, Transportation & Logistics, Properties & Real Estate, Investment Services. Jika perusahaan bukan emiten publik, tetap cari tahu sektor yang paling sesuai dengan bisnis intinya.",
-            "Type of Work": "Tipe ikatan kerja, misal: Full-time, Part-time, Internship, Contract. Isi null jika tidak ada",
-            "Apply Via": "Cara melamar, seperti alamat email, link website, atau nomor WhatsApp pendaftaran",
-            "Requirements": [
-              "Kualifikasi atau syarat pelamar 1",
-              "Kualifikasi atau syarat pelamar 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
-            ],
-            "Jobdesc": [
-              "Deskripsi pekerjaan atau tanggung jawab 1",
-              "Deskripsi pekerjaan atau tanggung jawab 2 (buat dalam bentuk array/list string, jika tidak ada buat menjadi array kosong [])"
-            ]
-          }`,
+          content: SYSTEM_PROMPT,
         },
         {
           role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mime};base64,${base64Image}` },
-            },
-          ],
+          content: imageContents,
         },
       ],
       temperature: 0.3,

@@ -11,10 +11,134 @@ const logger = require('../utils/logger');
 
 const bot = new TelegramBot(config.telegramBotToken, { polling: true });
 
+const MEDIA_GROUP_DEBOUNCE_MS = 1000;
+/** @type {Map<string, { chatId: number, photos: { file_id: string, message_id: number }[], caption: string|null, timer: NodeJS.Timeout|null, locked: boolean }>} */
+const mediaGroups = new Map();
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function applyCaptionSourceLink(result, caption) {
+  if (!caption) return;
+  const urlMatch = caption.match(/(https?:\/\/[^\s]+)/gi);
+  if (urlMatch && urlMatch.length > 0) {
+    result.source_link = urlMatch[0];
+    logger.info(`Found source link in caption: ${result.source_link}`);
+  }
+}
+
+function saveExtractionLog(result) {
+  const logDir = path.join(__dirname, '../../logs');
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const dateStr = `${yyyy}${mm}${dd}-${hh}${min}`;
+  const sanitize = (s) => (s || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');
+  const company = sanitize(result.Company);
+  const position = sanitize(result.Position);
+  const customName = `${company}_${position}`.slice(0, 100);
+  const logFile = path.join(logDir, `${dateStr}-(${customName}).json`);
+  fs.writeFileSync(logFile, JSON.stringify(result, null, 2));
+  logger.info(`Saved extraction result to ${logFile}`);
+}
+
+async function cleanupPaths(paths) {
+  for (const p of paths) {
+    try {
+      await fileHelper.unlinkAsync(p);
+    } catch (e) {
+      logger.warn(`Could not delete ${p}: ${e.message}`);
+    }
+  }
+}
+
+async function sendError(chatId, messageId, error) {
+  logger.error(`Error processing message: ${error.message}`);
+  const raw = error.stack || String(error);
+  const detail = raw.length > 3500 ? `${raw.slice(0, 3500)}\n…` : raw;
+  await bot.sendMessage(
+    chatId,
+    `❌ Terjadi kesalahan saat memproses gambar.\n\n<blockquote expandable>${escapeHtml(detail)}</blockquote>`,
+    { parse_mode: 'HTML', reply_to_message_id: messageId }
+  );
+}
+
+/**
+ * Download + AI + log + sheets + 1 balasan. Selalu cleanup temp.
+ * @param {{ chatId: number, messageId: number, fileIds: string[], caption: string|null, mediaGroupId?: string }} opts
+ */
+async function processJob({ chatId, messageId, fileIds, caption, mediaGroupId }) {
+  const downloadedPaths = [];
+  try {
+    for (const fileId of fileIds) {
+      logger.info(`Downloading image ${fileId}`);
+      const downloadedPath = await bot.downloadFile(fileId, os.tmpdir());
+      downloadedPaths.push(downloadedPath);
+    }
+
+    if (mediaGroupId) {
+      logger.info(
+        `Media group ${mediaGroupId}: ${downloadedPaths.length} photo(s), paths=${JSON.stringify(downloadedPaths)}`
+      );
+    }
+
+    logger.info(`Sending ${downloadedPaths.length} image(s) to AI for extraction...`);
+    const input = downloadedPaths.length === 1 ? downloadedPaths[0] : downloadedPaths;
+    const result = await aiService.extractTextFromImage(input);
+
+    applyCaptionSourceLink(result, caption);
+    saveExtractionLog(result);
+
+    logger.info('Appending row to Google Sheets...');
+    await sheetsService.appendRow(result);
+
+    await bot.sendMessage(chatId, '✅ Data berhasil diekstrak dan disimpan!');
+  } catch (error) {
+    await sendError(chatId, messageId, error);
+  } finally {
+    await cleanupPaths(downloadedPaths);
+  }
+}
+
+async function flushMediaGroup(groupId) {
+  const group = mediaGroups.get(groupId);
+  if (!group || group.locked) return;
+
+  group.locked = true;
+  if (group.timer) {
+    clearTimeout(group.timer);
+    group.timer = null;
+  }
+
+  // Ambil snapshot lalu hapus entry biar foto terlambat tidak double-process
+  const { chatId, photos, caption } = group;
+  mediaGroups.delete(groupId);
+
+  const fileIds = photos.map((p) => p.file_id);
+  const messageId = photos[0]?.message_id;
+
+  logger.info(`Flush media group ${groupId}: ${fileIds.length} photo(s)`);
+  await processJob({
+    chatId,
+    messageId,
+    fileIds,
+    caption,
+    mediaGroupId: groupId,
+  });
+}
+
 // Handle incoming message
 bot.on('message', async (msg) => {
-  let downloadedPath = null;
-
   // Hanya proses pesan dari chat yang diizinkan
   const normalizeChatId = (value) => String(value || '').replace(/[^\d-]/g, '');
   const incomingId = normalizeChatId(msg.chat.id);
@@ -30,82 +154,54 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  try {
-    const photoId = msg.photo[msg.photo.length - 1].file_id;
+  const photoId = msg.photo[msg.photo.length - 1].file_id;
 
-    logger.info(`Downloading image ${photoId}`);
+  // Media group: buffer + debounce, proses sekali setelah album lengkap
+  if (msg.media_group_id) {
+    const groupId = msg.media_group_id;
+    let group = mediaGroups.get(groupId);
 
-    // Download file ke temp dir (cross-platform)
-    downloadedPath = await bot.downloadFile(photoId, os.tmpdir());
-
-    logger.info(`Saved image to ${downloadedPath}`);
-
-    // Ekstraksi AI
-    logger.info('Sending image to AI for extraction...');
-    const result = await aiService.extractTextFromImage(downloadedPath);
-
-    // Extract URL from caption if present
-    if (msg.caption) {
-      const urlMatch = msg.caption.match(/(https?:\/\/[^\s]+)/gi);
-      if (urlMatch && urlMatch.length > 0) {
-        result.source_link = urlMatch[0];
-        logger.info(`Found source link in caption: ${result.source_link}`);
-      }
+    if (group?.locked) {
+      logger.info(`Ignore late photo for locked media group ${groupId}`);
+      return;
     }
 
-    // Simpan hasil sebagai file JSON di logs/
-    const logDir = path.join(__dirname, '../../logs');
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+    if (!group) {
+      group = {
+        chatId: msg.chat.id,
+        photos: [],
+        caption: null,
+        timer: null,
+        locked: false,
+      };
+      mediaGroups.set(groupId, group);
     }
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    const dateStr = `${yyyy}${mm}${dd}-${hh}${min}`;
-    const sanitize = (s) => (s || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');
-    const company = sanitize(result.Company);
-    const position = sanitize(result.Position);
-    const customName = `${company}_${position}`.slice(0, 100);
-    const logFile = path.join(logDir, `${dateStr}-(${customName}).json`);
-    fs.writeFileSync(logFile, JSON.stringify(result, null, 2));
-    logger.info(`Saved extraction result to ${logFile}`);
 
-    // Simpan hasil ke Google Sheets
-    logger.info('Appending row to Google Sheets...');
-    await sheetsService.appendRow(result);
+    group.photos.push({ file_id: photoId, message_id: msg.message_id });
+    if (!group.caption && msg.caption) {
+      group.caption = msg.caption;
+    }
 
-    // Kirim konfirmasi ke pengguna
-    await bot.sendMessage(msg.chat.id, '✅ Data berhasil diekstrak dan disimpan!');
+    if (group.timer) clearTimeout(group.timer);
+    group.timer = setTimeout(() => {
+      flushMediaGroup(groupId).catch((err) => {
+        logger.error(`flushMediaGroup failed: ${err.message}`);
+      });
+    }, MEDIA_GROUP_DEBOUNCE_MS);
 
-  } catch (error) {
-    logger.error(`Error processing message: ${error.message}`);
-
-    // Balas dengan log error format quote (blockquote Telegram)
-    const raw = error.stack || String(error);
-    const detail = raw.length > 3500 ? `${raw.slice(0, 3500)}\n…` : raw;
-    const escapeHtml = (s) => String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    await bot.sendMessage(
-      msg.chat.id,
-      `❌ Terjadi kesalahan saat memproses gambar.\n\n<blockquote expandable>${escapeHtml(detail)}</blockquote>`,
-      { parse_mode: 'HTML', reply_to_message_id: msg.message_id }
+    logger.info(
+      `Buffered media group ${groupId}: ${group.photos.length} photo(s), caption=${Boolean(group.caption)}`
     );
-
-  } finally {
-    // Hapus file sementara (selalu, sukses atau gagal)
-    if (downloadedPath) {
-      try {
-        await fileHelper.unlinkAsync(downloadedPath);
-      } catch (e) {
-        logger.warn(`Could not delete ${downloadedPath}: ${e.message}`);
-      }
-    }
+    return;
   }
+
+  // Foto tunggal
+  await processJob({
+    chatId: msg.chat.id,
+    messageId: msg.message_id,
+    fileIds: [photoId],
+    caption: msg.caption || null,
+  });
 });
 
 module.exports = { bot };
