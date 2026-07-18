@@ -9,7 +9,23 @@ const fileHelper = require('../utils/fileHelper');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
-const bot = new TelegramBot(config.telegramBotToken, { polling: true });
+const bot = new TelegramBot(config.telegramBotToken, {
+  polling: {
+    interval: 500,
+    params: {
+      timeout: 30,
+      limit: 10,
+    },
+  },
+});
+
+bot.on('polling_error', (err) => {
+  logger.error(`Polling error: ${err?.message || err?.code || err}`);
+});
+
+bot.on('error', (err) => {
+  logger.error(`Bot error: ${err?.message || err?.code || err}`);
+});
 
 const MEDIA_GROUP_DEBOUNCE_MS = 1000;
 /** @type {Map<string, { chatId: number, photos: { file_id: string, message_id: number }[], caption: string|null, timer: NodeJS.Timeout|null, locked: boolean }>} */
@@ -139,6 +155,7 @@ async function flushMediaGroup(groupId) {
 
 // Handle incoming message
 bot.on('message', async (msg) => {
+  try {
   // Hanya proses pesan dari chat yang diizinkan
   const normalizeChatId = (value) => String(value || '').replace(/[^\d-]/g, '');
   const incomingId = normalizeChatId(msg.chat.id);
@@ -202,6 +219,9 @@ bot.on('message', async (msg) => {
     fileIds: [photoId],
     caption: msg.caption || null,
   });
+  } catch (err) {
+    logger.error(`Message handler error: ${err?.message || err}`);
+  }
 });
 
 module.exports = { bot };

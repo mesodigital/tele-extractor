@@ -5,6 +5,11 @@ const logger = require('./utils/logger');
 
 const PORT = config.port || 4746;
 
+// Safety net: catch any unhandled rejection that slips through
+process.on('unhandledRejection', (reason) => {
+  logger.error(`Unhandled rejection: ${reason?.message || reason?.code || reason}`);
+});
+
 async function start() {
   try {
     logger.info(`🚀 Tele-Extractor started in ${config.nodeEnv} mode`);
@@ -13,7 +18,7 @@ async function start() {
 
     // Health check endpoint
     const http = require('http');
-    http.createServer((req, res) => {
+    const server = http.createServer((req, res) => {
       if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
@@ -21,7 +26,11 @@ async function start() {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
       }
-    }).listen(PORT, () => {
+    });
+    // Prevent connection leak from idle keep-alive sockets
+    server.keepAliveTimeout = 5000;
+    server.headersTimeout = 6000;
+    server.listen(PORT, () => {
       logger.info(`✅ HTTP server listening on port ${PORT}`);
     });
 
