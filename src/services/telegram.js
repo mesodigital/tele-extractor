@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
 
 const bot = new TelegramBot(config.telegramBotToken, {
   polling: {
-    interval: 500,
+    interval: 3000,
     params: {
       timeout: 30,
       limit: 10,
@@ -26,6 +26,19 @@ bot.on('polling_error', (err) => {
 bot.on('error', (err) => {
   logger.error(`Bot error: ${err?.message || err?.code || err}`);
 });
+
+// GC hint after each poll cycle — only fires when --expose-gc enabled.
+// Limits promise-chain retention window so V8 can reclaim earlier.
+// ponytail: replaces monkey-patch with iterative loop when upstream fix lands.
+(function patchPollingGc() {
+  if (!bot._polling || typeof bot._polling._polling !== 'function') return;
+  const original = bot._polling._polling.bind(bot._polling);
+  bot._polling._polling = function patched() {
+    const p = original();
+    if (typeof global.gc === 'function') p.finally(() => global.gc());
+    return p;
+  };
+})();
 
 const MEDIA_GROUP_DEBOUNCE_MS = 1000;
 /** @type {Map<string, { chatId: number, photos: { file_id: string, message_id: number }[], caption: string|null, timer: NodeJS.Timeout|null, locked: boolean }>} */
