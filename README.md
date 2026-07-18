@@ -10,7 +10,7 @@ Telegram bot yang menerima gambar poster lowongan pekerjaan, mengekstrak informa
 - Simpan log hasil ekstraksi ke file JSON lokal
 - Whitelist chat ID untuk keamanan (hanya chat tertentu yang bisa menggunakan bot)
 - Health check endpoint (`GET /health`)
-- Siap production dengan PM2 (cluster mode di Linux/macOS, fork mode di Windows)
+- Siap production dengan PM2 (fork mode, 1 instance — cocok bot polling)
 
 ## Persyaratan
 
@@ -83,7 +83,7 @@ npm start
 pm2 start ecosystem.config.js
 ```
 
-> **Catatan:** `ecosystem.config.js` otomatis menggunakan cluster mode (multi-proses) di Linux/macOS dan fork mode (single process) di Windows karena cluster mode tidak didukung di Windows.
+> **Catatan:** App pakai **fork mode, 1 instance**. Bot Telegram polling + port health tidak cocok di-cluster multi-proses (buang RAM + konflik `getUpdates`).
 
 PM2 service name: `tele-extractor`. Manage with:
 
@@ -119,7 +119,7 @@ tele-extractor/
 ├── logs/                     # Log hasil ekstraksi (JSON), di-.gitignore
 ├── .env.example
 ├── .gitignore
-├── ecosystem.config.js       # PM2 cluster config
+├── ecosystem.config.js       # PM2 fork config (1 instance)
 ├── package.json
 └── README.md
 ```
