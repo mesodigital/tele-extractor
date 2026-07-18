@@ -1,5 +1,6 @@
 // Konfigurasi Winston untuk debugging dan error logging
 const winston = require('winston');
+const path = require('path');
 const config = require('../config/config');
 
 const logger = winston.createLogger({
@@ -20,7 +21,7 @@ const logger = winston.createLogger({
 
 if (config.nodeEnv === 'production') {
   logger.add(new winston.transports.File({
-    filename: 'logs/error.log',
+    filename: path.join('logs', 'error.log'),
     level: 'error',
     maxsize: 10 * 1024 * 1024, // 10MB
     maxFiles: 5, // Keep up to 5 files

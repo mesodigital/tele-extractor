@@ -1,5 +1,6 @@
 // Logika bot (menerima pesan, download file, kirim balasan)
 const fs = require('fs');
+const os = require('os');
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const aiService = require('./ai');
@@ -15,7 +16,11 @@ bot.on('message', async (msg) => {
   let downloadedPath = null;
 
   // Hanya proses pesan dari chat yang diizinkan
-  if (String(msg.chat.id) !== String(config.allowedChatId)) {
+  const normalizeChatId = (value) => String(value || '').replace(/[^\d-]/g, '');
+  const incomingId = normalizeChatId(msg.chat.id);
+  const allowedId = normalizeChatId(config.allowedChatId);
+  if (incomingId !== allowedId) {
+    logger.warn(`Blocked message from chat ${incomingId} (expected ${allowedId})`);
     return;
   }
 
@@ -30,8 +35,8 @@ bot.on('message', async (msg) => {
 
     logger.info(`Downloading image ${photoId}`);
 
-    // Download file ke /tmp (downloadFile returns the full path)
-    downloadedPath = await bot.downloadFile(photoId, '/tmp');
+    // Download file ke temp dir (cross-platform)
+    downloadedPath = await bot.downloadFile(photoId, os.tmpdir());
 
     logger.info(`Saved image to ${downloadedPath}`);
 
